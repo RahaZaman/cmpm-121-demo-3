@@ -7,5 +7,5 @@ button.addEventListener("click", () => {
   alert("You clicked the button!");
 });
 
-// Append the button to the body of the document
+// Append the button the body of the element
 document.body.appendChild(button);
