@@ -1,99 +1,106 @@
-// @deno-types="npm:@types/leaflet@^1.9.14"
+// Import necessary modules and styles
 import leaflet from "leaflet";
-
-// Style sheets
 import "leaflet/dist/leaflet.css";
 import "./style.css";
 
-// Fix missing marker images
-import "./leafletWorkaround.ts";
+// Configuration constants for the map and game
+const GRID_SIZE = 1e-4; // Grid cell size in degrees
+const CACHE_RADIUS = 8; // Number of cells around the player to check for caches
+const SPAWN_RATE = 0.1; // Probability of a cache spawning in a cell
+const START_POSITION = leaflet.latLng(36.9895, -122.0628); // Initial player coordinates (Oakes Classroom)
 
-// Deterministic random number generator
-import luck from "./luck.ts";
+// Initialize player stats
+let totalPoints = 0; // Player's score
+let coinCount = 0; // Player's coin inventory
 
-// Location of our classroom (as identified on Google Maps)
-const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
-
-// Tunable gameplay parameters
-const GAMEPLAY_ZOOM_LEVEL = 19;
-const TILE_DEGREES = 1e-4;
-const NEIGHBORHOOD_SIZE = 8;
-const CACHE_SPAWN_PROBABILITY = 0.1;
-
-// Create the map (element with id "map" is defined in index.html)
-const map = leaflet.map(document.getElementById("map")!, {
-  center: OAKES_CLASSROOM,
-  zoom: GAMEPLAY_ZOOM_LEVEL,
-  minZoom: GAMEPLAY_ZOOM_LEVEL,
-  maxZoom: GAMEPLAY_ZOOM_LEVEL,
+// Initialize the map
+const geoMap = leaflet.map("map", {
+  center: START_POSITION,
+  zoom: 19,
   zoomControl: false,
   scrollWheelZoom: false,
 });
 
-// Populate the map with a background tile layer
-leaflet
-  .tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19,
-    attribution:
-      '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  })
-  .addTo(map);
+// Load and display the OpenStreetMap tiles
+leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: "&copy; OpenStreetMap contributors",
+}).addTo(geoMap);
 
-// Add a marker to represent the player
-const playerMarker = leaflet.marker(OAKES_CLASSROOM);
-playerMarker.bindTooltip("That's you!");
-playerMarker.addTo(map);
+// Select HTML elements for displaying player status
+const scoreDisplay = document.querySelector("#statusPanel")!;
+const inventoryDisplay = document.querySelector("#inventory")!;
 
-// Display the player's points
-let playerPoints = 0;
-const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!; // element `statusPanel` is defined in index.html
-statusPanel.innerHTML = "No points yet...";
+// Function to refresh player stats on the UI
+function refreshStats() {
+  scoreDisplay.innerHTML = `Points: ${totalPoints}`;
+  inventoryDisplay.innerHTML = `Inventory: ${coinCount} coins`;
+}
 
-// Add caches to the map by cell numbers
-function spawnCache(i: number, j: number) {
-  // Convert cell numbers into lat/lng bounds
-  const origin = OAKES_CLASSROOM;
-  const bounds = leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
+// Function to create a cache at the specified grid coordinates
+function createCache(x: number, y: number) {
+  // Calculate the bounds of the cache on the map
+  const basePosition = START_POSITION;
+  const cacheArea = leaflet.latLngBounds([
+    [basePosition.lat + x * GRID_SIZE, basePosition.lng + y * GRID_SIZE],
+    [
+      basePosition.lat + (x + 1) * GRID_SIZE,
+      basePosition.lng + (y + 1) * GRID_SIZE,
+    ],
   ]);
 
-  // Add a rectangle to the map to represent the cache
-  const rect = leaflet.rectangle(bounds);
-  rect.addTo(map);
+  // Add a rectangle to represent the cache
+  const cacheRect = leaflet.rectangle(cacheArea).addTo(geoMap);
+  let coinsInCache = Math.floor(Math.random() * 5) + 1; // Randomly assign between 1 and 5 coins to the cache
 
-  // Handle interactions with the cache
-  rect.bindPopup(() => {
-    // Each cache has a random point value, mutable by the player
-    let pointValue = Math.floor(luck([i, j, "initialValue"].toString()) * 100);
+  // Create an interactive popup for the cache
+  cacheRect.bindPopup(() => {
+    const popupContent = document.createElement("div");
+    popupContent.innerHTML = `
+      <div>Cache Location: (${x}, ${y})</div>
+      <div>Coins Available: <span id="cacheCoins">${coinsInCache}</span></div>
+      <button id="collectBtn">Collect</button>
+      <button id="depositBtn">Deposit</button>
+    `;
 
-    // The popup offers a description and button
-    const popupDiv = document.createElement("div");
-    popupDiv.innerHTML = `
-                <div>There is a cache here at "${i},${j}". It has value <span id="value">${pointValue}</span>.</div>
-                <button id="poke">poke</button>`;
+    // Add functionality to collect coins from the cache
+    popupContent.querySelector("#collectBtn")!.addEventListener("click", () => {
+      if (coinsInCache > 0) {
+        coinCount += coinsInCache;
+        coinsInCache = 0;
+        refreshStats();
+        popupContent.querySelector("#cacheCoins")!.textContent = "0";
+      }
+    });
 
-    // Clicking the button decrements the cache's value and increments the player's points
-    popupDiv
-      .querySelector<HTMLButtonElement>("#poke")!
-      .addEventListener("click", () => {
-        pointValue--;
-        popupDiv.querySelector<HTMLSpanElement>("#value")!.innerHTML =
-          pointValue.toString();
-        playerPoints++;
-        statusPanel.innerHTML = `${playerPoints} points accumulated`;
-      });
+    // Add functionality to deposit coins into the cache
+    popupContent.querySelector("#depositBtn")!.addEventListener("click", () => {
+      if (coinCount > 0) {
+        coinsInCache += coinCount;
+        totalPoints += coinCount;
+        coinCount = 0;
+        refreshStats();
+        popupContent.querySelector("#cacheCoins")!.textContent =
+          `${coinsInCache}`;
+      }
+    });
 
-    return popupDiv;
+    return popupContent;
   });
 }
 
-// Look around the player's neighborhood for caches to spawn
-for (let i = -NEIGHBORHOOD_SIZE; i < NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j < NEIGHBORHOOD_SIZE; j++) {
-    // If location i,j is lucky enough, spawn a cache!
-    if (luck([i, j].toString()) < CACHE_SPAWN_PROBABILITY) {
-      spawnCache(i, j);
+// Populate the neighborhood with caches based on the spawn probability
+for (let xOffset = -CACHE_RADIUS; xOffset <= CACHE_RADIUS; xOffset++) {
+  for (let yOffset = -CACHE_RADIUS; yOffset <= CACHE_RADIUS; yOffset++) {
+    if (Math.random() < SPAWN_RATE) {
+      createCache(xOffset, yOffset); // Generate a cache if the probability condition is met
     }
   }
 }
+
+// Event listener to reset the game state when the "resetGame" button is clicked
+document.querySelector("#resetGame")!.addEventListener("click", () => {
+  totalPoints = 0; // Reset the player's points
+  coinCount = 0; // Reset the player's coin inventory
+  refreshStats(); // Update the UI to reflect the reset state
+});
