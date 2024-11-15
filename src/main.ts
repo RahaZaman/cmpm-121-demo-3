@@ -1,106 +1,127 @@
-// Import necessary modules and styles
 import leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
 
-// Configuration constants for the map and game
-const GRID_SIZE = 1e-4; // Grid cell size in degrees
-const CACHE_RADIUS = 8; // Number of cells around the player to check for caches
-const SPAWN_RATE = 0.1; // Probability of a cache spawning in a cell
-const START_POSITION = leaflet.latLng(36.9895, -122.0628); // Initial player coordinates (Oakes Classroom)
+// Constants and configuration
+const GRID_SIZE = 1e-4;
+const CACHE_RADIUS = 8;
+const SPAWN_RATE = 0.1;
+const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 
-// Initialize player stats
-let totalPoints = 0; // Player's score
-let coinCount = 0; // Player's coin inventory
+let totalPoints = 0;
+let coinCount = 0;
 
 // Initialize the map
 const geoMap = leaflet.map("map", {
-  center: START_POSITION,
+  center: OAKES_CLASSROOM,
   zoom: 19,
-  zoomControl: false,
-  scrollWheelZoom: false,
+  zoomControl: true, // Enable zoom control
+  scrollWheelZoom: true, // Allow zoom with mouse scroll
 });
 
-// Load and display the OpenStreetMap tiles
+// Load OpenStreetMap tiles
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(geoMap);
 
-// Select HTML elements for displaying player status
-const scoreDisplay = document.querySelector("#statusPanel")!;
-const inventoryDisplay = document.querySelector("#inventory")!;
+// Add player marker
+const playerMarker = leaflet.marker(OAKES_CLASSROOM).addTo(geoMap);
 
-// Function to refresh player stats on the UI
-function refreshStats() {
-  scoreDisplay.innerHTML = `Points: ${totalPoints}`;
-  inventoryDisplay.innerHTML = `Inventory: ${coinCount} coins`;
+// Update player stats
+const statusPanel = document.querySelector("#statusPanel")!;
+const inventoryPanel = document.querySelector("#inventory")!;
+function updateStats() {
+  statusPanel.innerHTML = `Points: ${totalPoints}`;
+  inventoryPanel.innerHTML = `Inventory: ${coinCount} coins`;
 }
 
-// Function to create a cache at the specified grid coordinates
+// Function to handle cache interactions
 function createCache(x: number, y: number) {
-  // Calculate the bounds of the cache on the map
-  const basePosition = START_POSITION;
-  const cacheArea = leaflet.latLngBounds([
-    [basePosition.lat + x * GRID_SIZE, basePosition.lng + y * GRID_SIZE],
+  const bounds = leaflet.latLngBounds([
+    [OAKES_CLASSROOM.lat + x * GRID_SIZE, OAKES_CLASSROOM.lng + y * GRID_SIZE],
     [
-      basePosition.lat + (x + 1) * GRID_SIZE,
-      basePosition.lng + (y + 1) * GRID_SIZE,
+      OAKES_CLASSROOM.lat + (x + 1) * GRID_SIZE,
+      OAKES_CLASSROOM.lng + (y + 1) * GRID_SIZE,
     ],
   ]);
 
-  // Add a rectangle to represent the cache
-  const cacheRect = leaflet.rectangle(cacheArea).addTo(geoMap);
-  let coinsInCache = Math.floor(Math.random() * 5) + 1; // Randomly assign between 1 and 5 coins to the cache
+  const cacheRect = leaflet.rectangle(bounds).addTo(geoMap);
+  let coinsInCache = Math.floor(Math.random() * 5) + 1;
 
-  // Create an interactive popup for the cache
   cacheRect.bindPopup(() => {
-    const popupContent = document.createElement("div");
-    popupContent.innerHTML = `
-      <div>Cache Location: (${x}, ${y})</div>
+    const popupDiv = document.createElement("div");
+    popupDiv.innerHTML = `
+      <div style="text-align:center;font-weight:bold;">Inventory</div>
+      <div>Cache at (${x}, ${y})</div>
       <div>Coins Available: <span id="cacheCoins">${coinsInCache}</span></div>
       <button id="collectBtn">Collect</button>
       <button id="depositBtn">Deposit</button>
     `;
 
-    // Add functionality to collect coins from the cache
-    popupContent.querySelector("#collectBtn")!.addEventListener("click", () => {
+    popupDiv.querySelector("#collectBtn")!.addEventListener("click", () => {
       if (coinsInCache > 0) {
         coinCount += coinsInCache;
         coinsInCache = 0;
-        refreshStats();
-        popupContent.querySelector("#cacheCoins")!.textContent = "0";
+        updateStats();
+        popupDiv.querySelector("#cacheCoins")!.textContent = "0";
       }
     });
 
-    // Add functionality to deposit coins into the cache
-    popupContent.querySelector("#depositBtn")!.addEventListener("click", () => {
+    popupDiv.querySelector("#depositBtn")!.addEventListener("click", () => {
       if (coinCount > 0) {
         coinsInCache += coinCount;
         totalPoints += coinCount;
         coinCount = 0;
-        refreshStats();
-        popupContent.querySelector("#cacheCoins")!.textContent =
-          `${coinsInCache}`;
+        updateStats();
+        popupDiv.querySelector("#cacheCoins")!.textContent = `${coinsInCache}`;
       }
     });
 
-    return popupContent;
+    return popupDiv;
   });
 }
 
-// Populate the neighborhood with caches based on the spawn probability
-for (let xOffset = -CACHE_RADIUS; xOffset <= CACHE_RADIUS; xOffset++) {
-  for (let yOffset = -CACHE_RADIUS; yOffset <= CACHE_RADIUS; yOffset++) {
+// Populate caches
+for (let i = -CACHE_RADIUS; i <= CACHE_RADIUS; i++) {
+  for (let j = -CACHE_RADIUS; j <= CACHE_RADIUS; j++) {
     if (Math.random() < SPAWN_RATE) {
-      createCache(xOffset, yOffset); // Generate a cache if the probability condition is met
+      createCache(i, j);
     }
   }
 }
 
-// Event listener to reset the game state when the "resetGame" button is clicked
+// Player movement controls
+const moveStep = 0.0001;
+function movePlayer(dx: number, dy: number) {
+  const newPosition = leaflet.latLng(
+    playerMarker.getLatLng().lat + dx,
+    playerMarker.getLatLng().lng + dy,
+  );
+  playerMarker.setLatLng(newPosition);
+  geoMap.panTo(newPosition);
+}
+
+document.querySelector("#moveNorth")!.addEventListener(
+  "click",
+  () => movePlayer(moveStep, 0),
+);
+document.querySelector("#moveSouth")!.addEventListener(
+  "click",
+  () => movePlayer(-moveStep, 0),
+);
+document.querySelector("#moveWest")!.addEventListener(
+  "click",
+  () => movePlayer(0, -moveStep),
+);
+document.querySelector("#moveEast")!.addEventListener(
+  "click",
+  () => movePlayer(0, moveStep),
+);
+
+// Reset game functionality
 document.querySelector("#resetGame")!.addEventListener("click", () => {
-  totalPoints = 0; // Reset the player's points
-  coinCount = 0; // Reset the player's coin inventory
-  refreshStats(); // Update the UI to reflect the reset state
+  totalPoints = 0;
+  coinCount = 0;
+  updateStats();
 });

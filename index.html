@@ -1,22 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body>
-    <div id="app">
-      <div id="controlPanel">
-        <button id="sensor" title="sensor">🌐</button>
-        <button id="north" title="north">⬆️</button>
-        <button id="south" title="south">⬇️</button>
-        <button id="west" title="west">⬅️</button>
-        <button id="east" title="east">➡️</button>
-        <button id="reset" title="reset">🚮</button>
-    </div>
-    <div id="statusPanel"></div>
-    <div id="map"></div>
-    </div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geocoin Carrier</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1 id="appTitle">Geocoin Carrier</h1>
+  <div id="controlPanel">
+    <button id="moveNorth">⬆️</button>
+    <button id="moveSouth">⬇️</button>
+    <button id="moveWest">⬅️</button>
+    <button id="moveEast">➡️</button>
+    <button id="resetGame">Reset Game</button>
+  </div>
+  <div id="map"></div>
+  <div id="statusPanel">Points: 0</div>
+  <div id="inventory">Inventory: 0 coins</div>
+  <script type="module" src="./src/main.ts"></script>
+</body>
 </html>
