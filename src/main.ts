@@ -8,6 +8,7 @@ const CACHE_RADIUS = 8; // Grid radius around the player for cache generation
 const SPAWN_RATE = 0.1; // Probability of spawning a cache
 const NULL_ISLAND = leaflet.latLng(0, 0); // Center of the geodetic datum
 const PLAYER_START = NULL_ISLAND;
+const moveStep = GRID_SIZE; // Discrete step size for player movement
 
 // Player stats
 let totalPoints = 0;
@@ -60,69 +61,109 @@ const locationFactory = new LocationFactory();
 
 // Unique Coin Representation as NFTs
 type Coin = { i: number; j: number; serial: number };
-let coinIdCounter = 0; // Global counter for unique serial numbers
+let coinIdCounter = 0;
+
+// Cache Memento Pattern
+interface Memento {
+  toMemento(): string;
+  fromMemento(memento: string): void;
+}
+
+class Cache implements Memento {
+  private coins: Coin[] = [];
+  public memento?: string;
+
+  constructor(public i: number, public j: number) {
+    this.coins = createCoins(i, j, Math.floor(Math.random() * 5) + 1);
+  }
+
+  // Save the current state into a memento
+  toMemento(): string {
+    return JSON.stringify(this.coins);
+  }
+
+  // Restore the state from a memento
+  fromMemento(memento: string) {
+    this.coins = JSON.parse(memento);
+  }
+
+  get coinCount() {
+    return this.coins.length;
+  }
+
+  collectCoins(): number {
+    const collectedCoins = this.coins.length;
+    this.coins = [];
+    return collectedCoins;
+  }
+
+  addCoins(newCoins: Coin[]) {
+    this.coins.push(...newCoins);
+  }
+
+  getCoinsDisplay(): string {
+    return this.coins.map((coin) => `${coin.i}:${coin.j}#${coin.serial}`).join(
+      ", ",
+    );
+  }
+}
+
+// Cache storage
+const cacheMap: Map<string, Cache> = new Map();
 
 // Function to create unique coins based on cache location
 function createCoins(i: number, j: number, count: number): Coin[] {
-  return Array.from({ length: count }, (_, _idx) => ({
-    i,
-    j,
-    serial: coinIdCounter++,
-  }));
+  return Array.from(
+    { length: count },
+    (_, _idx) => ({ i, j, serial: coinIdCounter++ }),
+  );
 }
 
 // Function to handle cache interactions
-function createCache(i: number, j: number) {
+function spawnCache(i: number, j: number) {
+  const key = `${i},${j}`;
+  const cache = cacheMap.get(key) ?? new Cache(i, j);
+  cacheMap.set(key, cache);
+
   const bounds = leaflet.latLngBounds([
     locationFactory.getLocation(i, j),
     locationFactory.getLocation(i + 1, j + 1),
   ]);
 
   const cacheRect = leaflet.rectangle(bounds).addTo(geoMap);
-  let coinsInCache: Coin[] = createCoins(
-    i,
-    j,
-    Math.floor(Math.random() * 5) + 1,
-  );
-
-  // Create the popup content with coin details
   cacheRect.bindPopup(() => {
     const popupDiv = document.createElement("div");
-
-    // Compact representation of coins as "i:j#serial"
-    const coinDisplay = coinsInCache
-      .map((coin) => `${coin.i}:${coin.j}#${coin.serial}`)
-      .join(", ");
 
     popupDiv.innerHTML = `
       <div style="text-align:center;font-weight:bold;">Inventory</div>
       <div>Cache at (${i}, ${j})</div>
-      <div>Coins Available: <span id="cacheCoins">${coinsInCache.length}</span></div>
-      <div>Coin IDs: ${coinDisplay}</div>
+      <div>Coins Available: <span id="coinCount">${cache.coinCount}</span></div>
+      <div>Coin IDs: ${cache.getCoinsDisplay()}</div>
       <button id="collectBtn">Collect</button>
       <button id="depositBtn">Deposit</button>
     `;
 
-    // Event listener for collecting coins
+    // Collect coins
     popupDiv.querySelector("#collectBtn")!.addEventListener("click", () => {
-      if (coinsInCache.length > 0) {
-        coinCount += coinsInCache.length;
-        coinsInCache = []; // Remove all coins from cache
+      if (cache.coinCount > 0) {
+        coinCount += cache.collectCoins();
         updateStats();
-        popupDiv.querySelector("#cacheCoins")!.textContent = "0";
+        popupDiv.querySelector("#coinCount")!.textContent = "0";
+        cache.memento = cache.toMemento();
       }
     });
 
-    // Event listener for depositing coins
+    // Deposit coins
     popupDiv.querySelector("#depositBtn")!.addEventListener("click", () => {
       if (coinCount > 0) {
         const newCoins = createCoins(i, j, coinCount);
-        coinsInCache.push(...newCoins);
+        cache.addCoins(newCoins);
         totalPoints += coinCount;
-        coinCount = 0; // Reset player's coin count
+        coinCount = 0;
         updateStats();
-        popupDiv.querySelector("#cacheCoins")!.textContent =
-          `${coinsInCache.length}`;
+        popupDiv.querySelector("#coinCount")!.textContent =
+          `${cache.coinCount}`;
+        cache.memento = cache.toMemento();
       }
     });
 
@@ -130,24 +171,24 @@ function createCache(i: number, j: number) {
   });
 }
 
-// Populate caches around Null Island using the Flyweight pattern
-for (let i = -CACHE_RADIUS; i <= CACHE_RADIUS; i++) {
-  for (let j = -CACHE_RADIUS; j <= CACHE_RADIUS; j++) {
-    if (Math.random() < SPAWN_RATE) {
-      createCache(i, j);
+// Regenerate caches based on player's new position
+function regenerateCachesAround(playerPos: leaflet.LatLng) {
+  geoMap.eachLayer((layer: leaflet.layer) => {
+    if (layer instanceof leaflet.Rectangle) {
+      geoMap.removeLayer(layer);
+    }
+  });
+
+  const playerI = Math.floor((playerPos.lat - NULL_ISLAND.lat) / GRID_SIZE);
+  const playerJ = Math.floor((playerPos.lng - NULL_ISLAND.lng) / GRID_SIZE);
+
+  for (let i = playerI - CACHE_RADIUS; i <= playerI + CACHE_RADIUS; i++) {
+    for (let j = playerJ - CACHE_RADIUS; j <= playerJ + CACHE_RADIUS; j++) {
+      if (Math.random() < SPAWN_RATE) {
+        spawnCache(i, j);
+      }
     }
   }
-}
-
-// Player movement controls
-const moveStep = 0.0001;
-function movePlayer(dx: number, dy: number) {
-  const newPosition = leaflet.latLng(
-    playerMarker.getLatLng().lat + dx,
-    playerMarker.getLatLng().lng + dy,
-  );
-  playerMarker.setLatLng(newPosition);
-  geoMap.panTo(newPosition);
 }
 
 document.querySelector("#moveNorth")!.addEventListener(
@@ -167,7 +208,16 @@ document.querySelector("#moveEast")!.addEventListener(
   () => movePlayer(0, moveStep),
 );
 
-// Reset game functionality
+function movePlayer(dx: number, dy: number) {
+  const newPosition = leaflet.latLng(
+    playerMarker.getLatLng().lat + dx,
+    playerMarker.getLatLng().lng + dy,
+  );
+  playerMarker.setLatLng(newPosition);
+  geoMap.panTo(newPosition);
+  regenerateCachesAround(newPosition);
+}
+
 document.querySelector("#resetGame")!.addEventListener("click", () => {
   totalPoints = 0;
   coinCount = 0;
