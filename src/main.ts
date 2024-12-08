@@ -36,7 +36,7 @@ const trailLine = leaflet.polyline(playerTrail, { color: "blue" }).addTo(
 );
 
 // Type definition for Coins
-interface Coin {
+export interface Coin {
   x: number;
   y: number;
   id: number;
