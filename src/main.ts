@@ -3,34 +3,38 @@ import "leaflet/dist/leaflet.css";
 import "./style.css";
 
 // Constants and configurations
-const GRID_STEP = 1e-4;
-const CACHE_ZONE_RADIUS = 3; // Reduced radius for cache generation
-const SPAWN_PROBABILITY = 0.02; // Lowered spawn rate for fewer caches
-const INITIAL_POSITION = leaflet.latLng(0, 0);
-const INITIAL_PLAYER_POS = INITIAL_POSITION;
+const GRID_STEP = 1e-4; // Granularity of the grid
+const CACHE_ZONE_RADIUS = 3; // Radius for cache generation
+const SPAWN_PROBABILITY = 0.02; // Probability of spawn per cache
+const INITIAL_POSITION = leaflet.latLng(0, 0); // Initial position for the map
+const INITIAL_PLAYER_POS = INITIAL_POSITION; // Starting position of the player
 const MOVE_DELTA = GRID_STEP; // Step size for player movement
 
-// Player variables
-let totalScore = 0;
-let collectedCoins = 0;
-let playerTrail: leaflet.LatLng[] = [];
-let totalMoves = 0;
+// Player state variables
+let totalScore = 0; // Total score for the player
+export let collectedCoins = 0; // Coins collected by the player, exported for potential access in other modules
+export let playerTrail: leaflet.LatLng[] = []; // Track player's path
+export let totalMoves = 0; // Count total moves made by the player
 
 // Map initialization
-const gameMap = leaflet.map("map", {
+export const gameMap = leaflet.map("map", {
   center: INITIAL_POSITION,
   zoom: 19,
   zoomControl: true,
   scrollWheelZoom: true,
 });
 
+// Setup the tile layer for the map
 leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(gameMap);
 
+// Initialize player icon on the map
 const playerIcon = leaflet.marker(INITIAL_PLAYER_POS, { title: "Player" })
   .addTo(gameMap);
+
+// Initialize trail for the player
 const trailLine = leaflet.polyline(playerTrail, { color: "blue" }).addTo(
   gameMap,
 );
@@ -42,10 +46,11 @@ export interface Coin {
   id: number;
 }
 
-// Flyweight Pattern: Location Factory for optimized memory usage
+// Factory for optimized memory usage for positions
 class PositionFactory {
   private locationCache: Map<string, leaflet.LatLng> = new Map();
 
+  // Get position from cache or compute it
   getPosition(x: number, y: number): leaflet.LatLng {
     const cacheKey = `${x},${y}`;
     if (!this.locationCache.has(cacheKey)) {
@@ -58,9 +63,10 @@ class PositionFactory {
     return this.locationCache.get(cacheKey)!;
   }
 }
+
 const positionFactory = new PositionFactory();
 
-// Cache map
+// Cache storage using a map
 const caches: Map<string, CacheZone> = new Map();
 
 // UI panels
@@ -71,14 +77,14 @@ movementTracker.id = "movement";
 document.body.appendChild(movementTracker);
 
 // Update player stats on UI
-function refreshStats() {
+export function refreshStats() {
   statsPanel.innerHTML = `Points: ${totalScore}`;
   inventoryDisplay.innerHTML = `Coins: ${collectedCoins}`;
   movementTracker.innerHTML = `Moves: ${totalMoves}`;
 }
 
-// Update the player's trail on map
-function refreshPlayerTrail() {
+// Update the player's trail on the map
+export function refreshPlayerTrail() {
   trailLine.setLatLngs(playerTrail);
 }
 
@@ -87,7 +93,7 @@ class PlayerTracking {
   private watchId: number | null = null;
 
   isTrackingLocation(): boolean {
-    return this.watchId !== null;
+    return this.watchId !== null; // Check if tracking is active
   }
 
   startLocationTracking() {
@@ -109,15 +115,15 @@ class PlayerTracking {
     }
   }
 
-  handlePositionUpdate(position: GeolocationPosition) {
+  private handlePositionUpdate(position: GeolocationPosition) {
     const { latitude, longitude } = position.coords;
-    movePlayerTo(latitude, longitude);
+    movePlayerTo(latitude, longitude); // Update to new position
   }
 }
 
-const playerTracking = new PlayerTracking();
+const playerTracking = new PlayerTracking(); // Correctly instantiate PlayerTracking
 
-// Cache Zone with Memento Pattern
+// Cache Zone class
 class CacheZone {
   private storedCoins: Coin[] = [];
 
@@ -141,7 +147,7 @@ class CacheZone {
 }
 
 // Generate random coins for a given position
-function generateCoins(x: number, y: number, amount: number): Coin[] {
+export function generateCoins(x: number, y: number, amount: number): Coin[] {
   return Array.from({ length: amount }, (_, id) => ({ x, y, id }));
 }
 
@@ -153,12 +159,10 @@ function createCache(x: number, y: number) {
     cache = new CacheZone(x, y);
     caches.set(cacheKey, cache);
   }
-
   const bounds = leaflet.latLngBounds([
     positionFactory.getPosition(x, y),
     positionFactory.getPosition(x + 1, y + 1),
   ]);
-
   const cacheRectangle = leaflet.rectangle(bounds).addTo(gameMap);
   cacheRectangle.bindPopup(() => {
     const popupContent = document.createElement("div");
@@ -213,7 +217,6 @@ function regenerateNearbyCaches(playerPosition: leaflet.LatLng) {
   const playerY = Math.floor(
     (playerPosition.lng - INITIAL_POSITION.lng) / GRID_STEP,
   );
-
   for (
     let x = playerX - CACHE_ZONE_RADIUS;
     x <= playerX + CACHE_ZONE_RADIUS;
@@ -236,7 +239,6 @@ function movePlayerTo(latitude: number, longitude: number) {
   const newPosition = leaflet.latLng(latitude, longitude);
   playerIcon.setLatLng(newPosition);
   gameMap.panTo(newPosition);
-
   playerTrail.push(newPosition);
   totalMoves++;
   refreshPlayerTrail();
@@ -336,4 +338,5 @@ function loadSavedGame() {
   }
 }
 
+// Load saved game state on startup
 loadSavedGame();
